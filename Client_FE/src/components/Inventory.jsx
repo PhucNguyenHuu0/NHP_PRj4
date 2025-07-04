@@ -2,136 +2,117 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const Inventory = ({ token, role }) => {
-  const [logs, setLogs] = useState([]);
-  const [formData, setFormData] = useState({
-    nhp_productId: '',
-    nhp_attributeId: '',
-    nhp_quantity: '',
-  });
-  const [products, setProducts] = useState([]);
-  const [attributes, setAttributes] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [inventory, setInventory] = useState([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [editItem, setEditItem] = useState(null);
+  const [quantity, setQuantity] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchLogs();
-    fetchProducts();
+    if (!token) {
+      setError('Vui lòng đăng nhập để truy cập.');
+      setLoading(false);
+      return;
+    }
+    fetchInventory();
   }, [token]);
 
-  const fetchLogs = async () => {
+  const fetchInventory = async () => {
+    setLoading(true);
     try {
       const response = await axios.get('http://localhost:5000/api/inventory', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setLogs(response.data);
+      setInventory(Array.isArray(response.data) ? response.data : response.data.data || []);
     } catch (err) {
-      setError('Failed to fetch inventory logs');
+      setError('Không thể tải danh sách hàng tồn kho.');
+      console.error('Error fetching inventory:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const fetchProducts = async () => {
+  const handleUpdateQuantity = async (productId) => {
+    if (role !== 'Admin') {
+      setError('Bạn không có quyền cập nhật số lượng.');
+      return;
+    }
+    setLoading(true);
     try {
-      const response = await axios.get('http://localhost:5000/api/products', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setProducts(response.data);
+      await axios.post(
+        'http://localhost:5000/api/inventory/import',
+        { nhp_productId: productId, nhp_attributeId: null, nhp_quantity: parseInt(quantity) },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccess('Cập nhật số lượng thành công.');
+      fetchInventory();
+      setEditItem(null);
+      setQuantity(0);
     } catch (err) {
-      setError('Failed to fetch products');
+      setError('Cập nhật số lượng thất bại.');
+      console.error('Error updating quantity:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const fetchAttributes = async (productId) => {
-    try {
-      const response = await axios.get(`http://localhost:5000/api/products/${productId}/attributes`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setAttributes(response.data);
-    } catch (err) {
-      setError('Failed to fetch attributes');
-    }
-  };
-
-  const handleImportInventory = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post('http://localhost:5000/api/inventory/import', formData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSuccess('Inventory imported successfully');
-      fetchLogs();
-      setFormData({ nhp_productId: '', nhp_attributeId: '', nhp_quantity: '' });
-    } catch (err) {
-      setError('Failed to import inventory');
-    }
-  };
-
-  const filteredLogs = logs.filter((log) =>
-    log.nhp_type.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  if (loading) return <div className="text-center mt-4">Đang tải...</div>;
+  if (error) return <div className="text-red-500 mb-4 text-center">{error}</div>;
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6">Inventory</h1>
-      {error && <p className="text-red-500 mb-4">{error}</p>}
-      {success && <p className="text-green-500 mb-4">{success}</p>}
-      {role === 'Admin' && (
-        <div className="mb-6">
-          <input
-            type="text"
-            placeholder="Search logs..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="border p-2 rounded w-full md:w-1/2 mb-4"
-          />
-          <form onSubmit={handleImportInventory} className="bg-white p-4 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-2">Import Inventory</h2>
-            <select
-              value={formData.nhp_productId}
-              onChange={(e) => {
-                setFormData({ ...formData, nhp_productId: e.target.value });
-                fetchAttributes(e.target.value);
-              }}
-              className="border p-2 rounded w-full mb-2"
-              required
-            >
-              <option value="">Select Product</option>
-              {products.map((product) => (
-                <option key={product.nhp_id} value={product.nhp_id}>{product.nhp_name}</option>
-              ))}
-            </select>
-            <select
-              value={formData.nhp_attributeId}
-              onChange={(e) => setFormData({ ...formData, nhp_attributeId: e.target.value })}
-              className="border p-2 rounded w-full mb-2"
-              required
-            >
-              <option value="">Select Attribute</option>
-              {attributes.map((attr) => (
-                <option key={attr.nhp_id} value={attr.nhp_id}>{attr.nhp_size} - {attr.nhp_color}</option>
-              ))}
-            </select>
-            <input
-              type="number"
-              placeholder="Quantity"
-              value={formData.nhp_quantity}
-              onChange={(e) => setFormData({ ...formData, nhp_quantity: e.target.value })}
-              className="border p-2 rounded w-full mb-2"
-              required
-            />
-            <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-              Import
-            </button>
-          </form>
-        </div>
-      )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredLogs.map((log) => (
-          <div key={log.nhp_id} className="bg-white shadow-md rounded-lg p-4">
-            <h3 className="text-lg font-semibold">Log #{log.nhp_id}</h3>
-            <p>Type: {log.nhp_type}</p>
-            <p>Quantity: {log.nhp_quantity}</p>
-            <p>Date: {new Date(log.nhp_createdAt).toLocaleString()}</p>
+      <h1 className="text-3xl font-bold mb-6 text-center text-indigo-700">Quản Lý Hàng Tồn Kho</h1>
+      {success && <div className="bg-green-100 text-green-700 p-2 rounded mb-4 text-center">{success}</div>}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {inventory.map((item) => (
+          <div key={item.nhp_id} className="bg-white p-4 rounded-lg shadow-md">
+            <h3 className="text-lg font-semibold">{item.nhp_name || 'Unnamed Product'}</h3>
+            <p className="text-gray-600">Số lượng: {item.nhp_quantity || 0}</p>
+            {role === 'Admin' && (
+              <div className="mt-2">
+                {editItem === item.nhp_id ? (
+                  <div className="flex space-x-2">
+                    <input
+                      type="number"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      className="border p-1 rounded w-20"
+                      min="0"
+                      disabled={loading}
+                    />
+                    <button
+                      onClick={() => handleUpdateQuantity(item.nhp_id)}
+                      className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 disabled:bg-green-400"
+                      disabled={loading || !quantity}
+                    >
+                      Lưu
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditItem(null);
+                        setQuantity(0);
+                      }}
+                      className="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 disabled:bg-gray-400"
+                      disabled={loading}
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setEditItem(item.nhp_id);
+                      setQuantity(item.nhp_quantity || 0);
+                    }}
+                    className="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 disabled:bg-yellow-400"
+                    disabled={loading}
+                  >
+                    Chỉnh Sửa
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
